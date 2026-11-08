@@ -89,7 +89,6 @@ ns.RegisterModule("controller", "Controller", function()
         b:Note("Off is Blizzard's default: out of combat pulling back turns you around and runs forward.")
         b:Slider("Camera speed", 0.25, 3, 0.05, function() return db.cameraSpeed end,
             function(v) db.cameraSpeed = v; js.ApplyCamera() end, Fmt(2))
-        -- retail only, forever's camera ignores actioncam
         b:Check("Action cam", Key("actionCam", js.ApplyActionCam))
         b:Toggle("Action cam mode", { { "Basic", "basic" }, { "Full", "full" } },
             function() return db.actionCamMode end,
@@ -97,7 +96,7 @@ ns.RegisterModule("controller", "Controller", function()
                 db.actionCamMode = v
                 if db.actionCam then js.ApplyActionCam() end
             end)
-        b:Note("Same as /console actioncam basic or full. Applied on login while ticked, turned off again when unticked.")
+        b:Note("Same as /console actioncam basic or full. Applied on login while ticked, turned off again when unticked. Turns off Keep Character Centered while on.")
 
         b:Header("Select + L2 / R2 zoom")
         b:Slider("Zoom speed", 0.25, 3, 0.05, function() return db.zoomSpeed end,

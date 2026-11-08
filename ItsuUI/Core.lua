@@ -50,8 +50,24 @@ local TEXTURES = {
     ["Stripes"] = "stripes",
     ["Hatch"]   = "hatch",
     ["Lines"]   = "lines",
-    ["Pixel"]   = "pixel",
     ["Brushed"] = "brushed",
+    -- from bar-textures
+    ["Bevel 2"]   = "bevel2",
+    ["Brushed 2"] = "brushed2",
+    ["Chevron"]   = "chevron",
+    ["Cloud"]     = "cloud",
+    ["Dualtone"]  = "dualtone",
+    ["Frosted"]   = "frosted",
+    ["Glossy"]    = "glossy",
+    ["Hammered"]  = "hammered",
+    ["Scanline"]  = "scanline",
+    ["Segmented"] = "segmented",
+    ["Smooth 2"]  = "smooth2",
+    ["Stone"]     = "stone",
+    ["Striped"]   = "striped",
+    ["Tube 2"]    = "tube2",
+    ["Wave"]      = "wave",
+    ["Woodgrain"] = "woodgrain",
 }
 for name, file in pairs(TEXTURES) do
     LSM:Register(LSM.MediaType.STATUSBAR, name, TEXTURE_PATH .. file .. ".tga")

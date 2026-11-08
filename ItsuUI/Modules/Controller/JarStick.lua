@@ -241,6 +241,10 @@ local function ApplyCamera()
 end
 
 -- blizzards action cam presets, same as /console actioncam basic|full|off
+-- the motion sickness cvars (keep character centered etc) quietly override it, so those
+-- go to 0 while its on and back to whatever the player had when its off
+local CALM_CVARS = { "CameraKeepCharacterCentered", "CameraReduceUnexpectedMovement" }
+
 local function ApplyActionCam(fromLogin)
     if not ConsoleExec then
         Print("ConsoleExec is gone, set action cam with /console actioncam basic")
@@ -251,9 +255,17 @@ local function ApplyActionCam(fromLogin)
         if GameEvent and GameEvent.UnregisterInternalEvent then
             GameEvent.UnregisterInternalEvent("EXPERIMENTAL_CVAR_CONFIRMATION_NEEDED")
         end
+        db.calmCVars = db.calmCVars or {}
+        for _, cv in ipairs(CALM_CVARS) do
+            local cur = C_CVar.GetCVar(cv)
+            if cur and db.calmCVars[cv] == nil then db.calmCVars[cv] = cur end
+            if cur then C_CVar.SetCVar(cv, "0") end
+        end
         ConsoleExec("actioncam " .. (db.actionCamMode or "basic"))
     elseif not fromLogin then
         ConsoleExec("actioncam off")
+        for cv, v in pairs(db.calmCVars or {}) do C_CVar.SetCVar(cv, v) end
+        db.calmCVars = nil
     end
 end
 

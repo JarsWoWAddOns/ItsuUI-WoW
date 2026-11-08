@@ -24,7 +24,7 @@ const TEXTURES = {
     stripes: (x, y) => ((x + y) % 32 < 16 ? 1 : 0.76),
     hatch: (x, y) => ((x + y) % 8 < 2 ? 1 : 0.74),
     lines: (x, y) => (y % 4 < 2 ? 1 : 0.72),
-    pixel: (x, y) => (x % 8 < 6 && y % 8 < 6 ? 1 : 0.62),
+    // pixel: (x, y) => (x % 8 < 6 && y % 8 < 6 ? 1 : 0.62),
     brushed: (x, y) => 0.8 + 0.12 * (rowNoise[y] - 0.5) + 0.2 * (colNoise[x] - 0.5),
 };
 
