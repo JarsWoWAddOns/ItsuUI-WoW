@@ -353,6 +353,21 @@ end
 local window, activeTab
 local tabs = {}
 
+-- sidebar rows, a group only lists its pages while one of them is open
+local sideRows, openGroup = {}, nil
+local function LayoutSidebar()
+    local row = 0
+    for _, r in ipairs(sideRows) do
+        local show = r.head or not r.group or r.group == openGroup
+        r.frame:SetShown(show)
+        if show then
+            r.frame:SetPoint("TOPLEFT", 0, -6 - row * 30)
+            row = row + 1
+        end
+        if r.head then r.frame.label:SetText((r.group == openGroup and "- " or "+ ") .. r.group) end
+    end
+end
+
 local function ShowTab(tab)
     if activeTab then
         activeTab.panel:Hide()
@@ -360,6 +375,10 @@ local function ShowTab(tab)
         activeTab.button.label:SetTextColor(unpack(UI.text))
     end
     activeTab = tab
+    if openGroup ~= tab.info.group then
+        openGroup = tab.info.group
+        LayoutSidebar()
+    end
     tab.button.bg:SetColorTexture(UI.accentDim[1], UI.accentDim[2], UI.accentDim[3], 0.4)
     tab.button.label:SetTextColor(unpack(UI.accent))
 
@@ -434,20 +453,32 @@ local function CreateWindow()
     sideBg:SetAllPoints()
     sideBg:SetColorTexture(unpack(UI.header))
 
-    -- panels in a group get a heading row and sit indented under it
-    local row, lastGroup = 0, nil
+    -- panels in a group get a heading row and sit indented under it.
+    -- clicking the heading opens the groups first page
+    local lastGroup
     for i, info in ipairs(ns.panelList) do
         if info.group and info.group ~= lastGroup then
-            local head = NewLabel(sidebar, 11, UI.textDim)
-            head:SetPoint("TOPLEFT", 14, -6 - row * 30 - 9)
-            head:SetText(info.group)
-            row = row + 1
+            local group = info.group
+            local head = CreateFrame("Button", nil, sidebar)
+            head:SetSize(SIDEBAR_W, 30)
+            head.label = NewLabel(head, 11, UI.textDim)
+            head.label:SetPoint("LEFT", 14, 0)
+            head:SetScript("OnEnter", function() head.label:SetTextColor(unpack(UI.text)) end)
+            head:SetScript("OnLeave", function() head.label:SetTextColor(unpack(UI.textDim)) end)
+            head:SetScript("OnClick", function()
+                for _, t in ipairs(tabs) do
+                    if t.info.group == group then
+                        ShowTab(t)
+                        return
+                    end
+                end
+            end)
+            sideRows[#sideRows + 1] = { frame = head, head = true, group = group }
         end
         lastGroup = info.group
         local btn = CreateFrame("Button", nil, sidebar)
         btn:SetSize(SIDEBAR_W, 30)
-        btn:SetPoint("TOPLEFT", 0, -6 - row * 30)
-        row = row + 1
+        sideRows[#sideRows + 1] = { frame = btn, group = info.group }
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
         btn.bg:SetColorTexture(0, 0, 0, 0)
@@ -468,6 +499,7 @@ local function CreateWindow()
         tabs[i] = tab
         btn:SetScript("OnClick", function() ShowTab(tab) end)
     end
+    LayoutSidebar()
 
     f:SetScript("OnShow", function()
         if activeTab then activeTab.builder:Refresh() end

@@ -311,9 +311,20 @@ local function NPCAction(api, want)
     end
 end
 
+-- the reward the dpad is on gets its item tooltip, same as mousing over it
+local npcTip
+local function NPCRewardTip(b)
+    if b and b == npcTip and GameTooltip:IsOwned(b) then return end
+    if npcTip and GameTooltip:IsOwned(npcTip) then GameTooltip:Hide() end
+    npcTip = b
+    local onEnter = b and b:GetScript("OnEnter")
+    if onEnter then onEnter(b) end
+end
+
 local function NPCHighlight()
     local api = NPC()
     if not api then
+        NPCRewardTip(nil)
         Highlight(nil)
         return
     end
@@ -324,7 +335,11 @@ local function NPCHighlight()
         local b = rewards[sel.npc]
         if b and b.index ~= api.GetSelectedReward() then b:Click() end
         Highlight(b)
-    elseif #options > 0 then
+        NPCRewardTip(b)
+        return
+    end
+    NPCRewardTip(nil)
+    if #options > 0 then
         sel.npc = Wrap(sel.npc, #options)
         Highlight(options[sel.npc])
     else

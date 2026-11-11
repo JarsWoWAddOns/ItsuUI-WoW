@@ -141,6 +141,11 @@ local rewardFrame = CreateFrame("Frame", nil, bubble)
 rewardFrame:SetPoint("RIGHT", bubble, "RIGHT", -BUBBLE_PADDING, 0)
 rewardFrame:EnableMouse(true)
 rewardFrame:Hide()
+-- a reward tooltip (mouse or controller) goes away with the rewards
+rewardFrame:SetScript("OnHide", function()
+    local owner = GameTooltip:GetOwner()
+    if owner and owner:GetParent() == rewardFrame then GameTooltip:Hide() end
+end)
 
 local rewardLabel = rewardFrame:CreateFontString(nil, "OVERLAY")
 rewardLabel:SetFont(FONT, 12, "")
@@ -365,6 +370,7 @@ end
 
 local function ReleaseAllRewardButtons()
     for _, btn in ipairs(activeRewardButtons) do
+        if GameTooltip:IsOwned(btn) then GameTooltip:Hide() end
         btn:Hide()
         btn:SetScript("OnClick", nil)
         btn.selected:Hide()

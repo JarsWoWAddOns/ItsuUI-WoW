@@ -268,4 +268,25 @@ ns.RegisterModule("controller", "Controller", function()
         })
         b:Note("The first puts Blizzard's gamepad settings back, then the controller defaults on top: positions, paging, camera, all of it. Profiles are kept. The second only resets Blizzard's gamepad settings.")
     end, GROUP)
+
+    -- enemy targeted, show its tooltip in blizzards default spot (bottom right)
+    local tipOwner = CreateFrame("Frame", nil, UIParent)
+
+    local function ShowTargetTip()
+        if not UnitExists("target") or not UnitCanAttack("player", "target") then
+            if GameTooltip:IsOwned(tipOwner) then GameTooltip:Hide() end
+            return
+        end
+        -- something else is using the tooltip, wait for it to hide
+        if GameTooltip:IsShown() and not GameTooltip:IsOwned(tipOwner) then return end
+        GameTooltip_SetDefaultAnchor(GameTooltip, tipOwner)
+        GameTooltip:SetUnit("target")
+    end
+
+    local tipEvents = CreateFrame("Frame")
+    tipEvents:RegisterEvent("PLAYER_TARGET_CHANGED")
+    tipEvents:RegisterUnitEvent("UNIT_FACTION", "target")
+    tipEvents:SetScript("OnEvent", ShowTargetTip)
+    -- a mouseover or button tooltip took it over, bring ours back once thats gone
+    GameTooltip:HookScript("OnHide", function() C_Timer.After(0, ShowTargetTip) end)
 end)

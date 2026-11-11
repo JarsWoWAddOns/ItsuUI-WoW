@@ -50,7 +50,26 @@ local defaults = {
     partyWidth = 150,
     partyPadding = 5,
     partyShowOnlyMyBuffs = true,
+    playerWidth = 220,
+    targetWidth = 220,
 }
+
+-- per frame sizes + aura spots. "tot" is target of target
+local FRAME_KEYS = { "player", "target", "focus", "tot", "pet", "party" }
+-- normal aura icon size, the scale sliders go 70-130% of this
+local AURA_SIZE = { player = 20, target = 20, focus = 18, tot = 18, pet = 18, party = 18 }
+-- these line their name + auras up on the right edge
+local MIRRORED = { target = true, focus = true }
+for _, k in ipairs(FRAME_KEYS) do
+    defaults[k .. "Health"] = 20
+    defaults[k .. "Power"] = 8
+    defaults[k .. "BuffPos"] = k == "party" and "right" or "above"
+    defaults[k .. "DebuffPos"] = k == "party" and "left" or "below"
+    defaults[k .. "BuffScale"] = 1
+    defaults[k .. "DebuffScale"] = 1
+    if defaults[k .. "ShowBuffs"] == nil then defaults[k .. "ShowBuffs"] = true end
+    if defaults[k .. "ShowDebuffs"] == nil then defaults[k .. "ShowDebuffs"] = true end
+end
 
 -- Frame references
 local playerFrame, targetFrame, petFrame, focusFrame, targetTargetFrame
@@ -328,6 +347,52 @@ end
 
 local function SetAuraRowShown(c, shown)
     if c then c:SetEnabled(shown) end
+end
+
+-- move + scale a buff/debuff row, scaling the container leaves the secret buttons alone.
+-- offsets get divided by the scale since theyre in the containers own units
+local function PlaceAuraRow(f, c, pos, scale)
+    if not c then return end
+    local right = MIRRORED[f.key]
+    local p
+    if pos == "above" then
+        p = right and { "BOTTOMRIGHT", f.healthBar, "TOPRIGHT", 0, 2, -1, 1 }
+            or { "BOTTOMLEFT", f.healthBar, "TOPLEFT", 0, 2, 1, 1 }
+    elseif pos == "below" then
+        p = right and { "TOPRIGHT", f.name, "BOTTOMRIGHT", 0, -2, -1, -1 }
+            or { "TOPLEFT", f.name, "BOTTOMLEFT", 0, -2, 1, -1 }
+    elseif pos == "left" then
+        p = { "BOTTOMRIGHT", f.powerBar, "BOTTOMLEFT", -2, 0, -1, 1 }
+    else
+        p = { "BOTTOMLEFT", f.powerBar, "BOTTOMRIGHT", 2, 0, 1, 1 }
+    end
+    c:SetScale(scale)
+    c:ClearAllPoints()
+    c:SetPoint(p[1], p[2], p[3], p[4] / scale, p[5] / scale)
+    c:SetFlowLayoutAnchorPoint(p[1])
+    c:SetFlowLayoutGrowthDirection(p[6], p[7])
+end
+
+-- bar heights, width and aura rows from the db. gaps stay put: 2 between the bars
+-- (party has none), name 5 under the power bar
+local function ApplyFrameLayout(f)
+    if not f or not f.key then return end
+    local DB, key = JarUnitFramesDB, f.key
+    local w, hp, pw = DB[key .. "Width"], DB[key .. "Health"], DB[key .. "Power"]
+    RunWhenSafe("layout" .. f:GetName(), function()
+        f.healthBar:SetSize(w, hp)
+        f.powerBar:SetSize(w, pw)
+        if key == "party" then
+            f:SetSize(w, 7 + hp + pw + 10)
+        else
+            f.powerBar:SetPoint("TOP", 0, -(hp + 2))
+            f:SetSize(w, hp + 2 + pw + ((key == "player" or key == "target") and 15 or 0))
+        end
+        PlaceAuraRow(f, f.buffRow, DB[key .. "BuffPos"], DB[key .. "BuffScale"])
+        PlaceAuraRow(f, f.debuffRow, DB[key .. "DebuffPos"], DB[key .. "DebuffScale"])
+        SetAuraRowShown(f.buffRow, DB[key .. "ShowBuffs"])
+        SetAuraRowShown(f.debuffRow, DB[key .. "ShowDebuffs"])
+    end)
 end
 
 local function RefreshAuras(frame)
@@ -1932,6 +1997,17 @@ function SetupFrames()
             RepositionPartyFrames()
         end
 
+        for key, f in pairs({ player = playerFrame, target = targetFrame, focus = focusFrame, tot = targetTargetFrame, pet = petFrame }) do
+            f.key = key
+            ApplyFrameLayout(f)
+        end
+        for i = 1, 4 do
+            if partyFrames[i] then
+                partyFrames[i].key = "party"
+                ApplyFrameLayout(partyFrames[i])
+            end
+        end
+
         SetFrameEnabled(playerFrame, JarUnitFramesDB.showPlayerFrame)
         SetFrameEnabled(targetFrame, JarUnitFramesDB.showTargetFrame)
         SetFrameEnabled(focusFrame, JarUnitFramesDB.showFocusFrame)
@@ -1984,7 +2060,7 @@ SlashCmdList["JARUNITFRAMES"] = function(msg)
     msg = msg:lower():trim()
     
     if msg == "config" or msg == "" then
-        ns.OpenConfig("Unit Frames")
+        ns.OpenConfig("All Frames")
 
     elseif msg == "toggle" then
         JarUnitFramesDB.showPlayerFrame = not JarUnitFramesDB.showPlayerFrame
@@ -2089,65 +2165,31 @@ ns.OnShared(ApplyShared)
 
 local function RoundTen(v) return math.floor(v / 10 + 0.5) * 10 end
 
-ns.RegisterPanel(30, "Unit Frames", function(b)
-    local DB = JarUnitFramesDB
+-- the config pages, Unit Frames > All Frames, Player, Target ...
+local GROUP = "Unit Frames"
 
-    -- show check, buff + debuff checks and a width slider, focus/tot/pet all use this
-    local function SmallFrameSection(title, prefix, showKey, getFrame, minW, maxW, defaultW)
-        b:Header(title)
-        b:Check("Show " .. title,
-            function() return DB[showKey] end,
-            function(v) DB[showKey] = v; SetupFrames() end)
-        b:Check("Show Buffs",
-            function() return DB[prefix .. "ShowBuffs"] end,
-            function(v)
-                DB[prefix .. "ShowBuffs"] = v
-                local f = getFrame()
-                SetAuraRowShown(f and f.buffRow, v)
-            end)
-        b:Check("Show Debuffs",
-            function() return DB[prefix .. "ShowDebuffs"] end,
-            function(v)
-                DB[prefix .. "ShowDebuffs"] = v
-                local f = getFrame()
-                SetAuraRowShown(f and f.debuffRow, v)
-            end)
-        b:Slider("Width", minW, maxW, 10,
-            function() return DB[prefix .. "Width"] or defaultW end,
-            function(v)
-                v = RoundTen(v)
-                DB[prefix .. "Width"] = v
-                local f = getFrame()
-                if f then
-                    RunWhenSafe(prefix .. "Width", function()
-                        f:SetWidth(v)
-                        f.healthBar:SetWidth(v)
-                        f.powerBar:SetWidth(v)
-                    end)
-                end
-            end)
-    end
+local function FramesOf(key)
+    if key == "party" then return partyFrames end
+    return { ({ player = playerFrame, target = targetFrame, focus = focusFrame, tot = targetTargetFrame, pet = petFrame })[key] }
+end
+
+local function Relayout(key)
+    for _, f in ipairs(FramesOf(key)) do ApplyFrameLayout(f) end
+end
+
+local SIDES = { { "Above", "above" }, { "Below", "below" }, { "Left", "left" }, { "Right", "right" } }
+
+local function Pct(v) return string.format("%.0f%%", v * 100) end
+
+ns.RegisterPanel(30.1, "All Frames", function(b)
+    local DB = JarUnitFramesDB
 
     b:Header("Text")
     -- +/- 25% around the normal 12
     b:Slider("Font Size  (names, health, level + item level on every frame)", 0.75, 1.25, 0.05,
         function() return (DB.fontSize or 12) / 12 end,
         function(v) DB.fontSize = 12 * v; ForEachUnitFrame(UpdateFrameFonts) end,
-        function(v) return string.format("%.0f%%", v * 100) end)
-
-    b:Header("Player + Target")
-    b:Check("Show Player Frame",
-        function() return DB.showPlayerFrame end,
-        function(v) DB.showPlayerFrame = v; SetupFrames() end)
-    b:Check("Show Target Frame",
-        function() return DB.showTargetFrame end,
-        function(v) DB.showTargetFrame = v; SetupFrames() end)
-    b:Check("Mirror target position off the player frame",
-        function() return DB.mirrorTargetPosition end,
-        function(v)
-            DB.mirrorTargetPosition = v
-            if v then MirrorTargetPosition() end
-        end)
+        Pct)
     b:Check("Show Level",
         function() return DB.showLevel end,
         function(v) DB.showLevel = v; UpdatePlayerFrame(); UpdateTargetFrame() end)
@@ -2164,69 +2206,135 @@ ns.RegisterPanel(30, "Unit Frames", function(b)
                 end
             end
         end)
-    b:Slider("Frame Scale", 0.5, 2, 0.1,
+
+    b:Header("Frames")
+    b:Slider("Frame Scale  (all but party)", 0.5, 2, 0.1,
         function() return DB.frameScale end,
         function(v) DB.frameScale = v; ApplyFrameScale() end,
         function(v) return string.format("%.1f", v) end)
+    b:Check("Mirror target position off the player frame",
+        function() return DB.mirrorTargetPosition end,
+        function(v)
+            DB.mirrorTargetPosition = v
+            if v then MirrorTargetPosition() end
+        end)
 
     b:Header("Buffs + Debuffs")
     b:Check("Show tooltips when hovering buffs",
         function() return DB.enableAuraTooltips end,
         function(v) DB.enableAuraTooltips = v; ForEachUnitFrame(ApplyAuraTooltipSetting) end)
-    local FILTERS = {}
-    for i, preset in ipairs(DEBUFF_FILTER_PRESETS) do FILTERS[i] = { preset.label, preset.value } end
-    local function FilterCycle(text, key, apply)
-        b:Cycle(text, FILTERS,
-            function() return DB[key] end,
-            function(v) DB[key] = v; apply(v) end)
-    end
-    FilterCycle("Player Debuffs", "playerDebuffFilter", function(v) SetAuraRowFilter(playerFrame and playerFrame.debuffRow, v) end)
-    FilterCycle("Target Debuffs", "targetDebuffFilter", function(v) SetAuraRowFilter(targetFrame and targetFrame.debuffRow, v) end)
-    FilterCycle("Focus Debuffs", "focusDebuffFilter", function(v) SetAuraRowFilter(focusFrame and focusFrame.debuffRow, v) end)
-    FilterCycle("Party Debuffs", "partyDebuffFilter", function(v)
-        for i = 1, 4 do SetAuraRowFilter(partyFrames[i] and partyFrames[i].debuffRow, v) end
-    end)
-    b:Slider("Player Max Debuffs", 5, 40, 1,
-        function() return DB.playerMaxDebuffs or 40 end,
-        function(v) DB.playerMaxDebuffs = v; SetAuraRowMax(playerFrame and playerFrame.debuffRow, v) end)
-    b:Slider("Target Max Debuffs", 5, 40, 1,
-        function() return DB.targetMaxDebuffs or 40 end,
-        function(v) DB.targetMaxDebuffs = v; SetAuraRowMax(targetFrame and targetFrame.debuffRow, v) end)
+    b:Note("Sizes, aura positions, icon sizes and filters are on each frame's own page.")
+end, GROUP)
 
-    SmallFrameSection("Focus Frame", "focus", "showFocusFrame", function() return focusFrame end, 150, 300, 220)
-    SmallFrameSection("Target of Target", "tot", "showTargetTargetFrame", function() return targetTargetFrame end, 100, 250, 150)
-    SmallFrameSection("Pet Frame", "pet", "showPetFrame", function() return petFrame end, 100, 250, 150)
+-- one page per frame
+local PAGES = {
+    { key = "player", title = "Player", show = "showPlayerFrame", minW = 150, maxW = 350, maxDebuffs = "playerMaxDebuffs" },
+    { key = "target", title = "Target", show = "showTargetFrame", minW = 150, maxW = 350, maxDebuffs = "targetMaxDebuffs" },
+    { key = "focus", title = "Focus", show = "showFocusFrame", minW = 150, maxW = 350 },
+    { key = "tot", title = "Target of Target", show = "showTargetTargetFrame", minW = 100, maxW = 250 },
+    { key = "pet", title = "Pet", show = "showPetFrame", minW = 100, maxW = 250 },
+    { key = "party", title = "Party", show = "showPartyFrames", minW = 100, maxW = 250 },
+}
 
-    b:Header("Party Frames")
-    b:Check("Show Party Frames",
-        function() return DB.showPartyFrames end,
-        function(v)
-            DB.showPartyFrames = v
-            HideBlizzardPartyFrames()
-            SetupFrames()
-            -- blocked blizz frames cant be un-blocked without a reload
-            if not v then print("|cff00ff00Itsu:UI|r /reload to get the Blizzard party frames back") end
-        end)
-    b:Check("Show only my buffs",
-        function() return DB.partyShowOnlyMyBuffs end,
-        function(v)
-            DB.partyShowOnlyMyBuffs = v
-            for i = 1, 4 do
-                SetAuraRowFilter(partyFrames[i] and partyFrames[i].buffRow, v and "HELPFUL|PLAYER" or "HELPFUL")
-            end
-        end)
-    b:Slider("Party Width", 100, 250, 10,
-        function() return DB.partyWidth or 150 end,
-        function(v)
-            DB.partyWidth = RoundTen(v)
-            RunWhenSafe("partyPos", RepositionPartyFrames)
-        end)
-    b:Slider("Party Padding", 0, 20, 1,
-        function() return DB.partyPadding or 5 end,
-        function(v)
-            DB.partyPadding = v
-            RunWhenSafe("partyPos", RepositionPartyFrames)
-        end)
-end)
+local FILTERS = {}
+for i, preset in ipairs(DEBUFF_FILTER_PRESETS) do FILTERS[i] = { preset.label, preset.value } end
+
+for i, page in ipairs(PAGES) do
+    local key = page.key
+    ns.RegisterPanel(30.1 + i / 100, page.title, function(b)
+        local DB = JarUnitFramesDB
+
+        local function Slider(text, minV, maxV, step, dbKey, fmt, round)
+            b:Slider(text, minV, maxV, step,
+                function() return DB[dbKey] end,
+                function(v)
+                    DB[dbKey] = round and round(v) or v
+                    Relayout(key)
+                end, fmt)
+        end
+
+        -- buffs and debuffs never share a side, the other rows side is left out
+        local function AuraSection(label, kind, other)
+            local posKey, otherKey = key .. kind .. "Pos", key .. other .. "Pos"
+            local base = AURA_SIZE[key]
+            b:Header(label)
+            b:Check("Show " .. label,
+                function() return DB[key .. "Show" .. label] end,
+                function(v) DB[key .. "Show" .. label] = v; Relayout(key) end)
+            b:Dropdown("Position", function()
+                for _, s in ipairs(SIDES) do
+                    if s[2] == DB[posKey] then return s[1] end
+                end
+                return DB[posKey]
+            end, function(_, root)
+                for _, s in ipairs(SIDES) do
+                    if s[2] ~= DB[otherKey] then
+                        root:CreateRadio(s[1], function() return DB[posKey] == s[2] end, function()
+                            DB[posKey] = s[2]
+                            Relayout(key)
+                            b:Refresh()
+                        end)
+                    end
+                end
+            end)
+            Slider("Icon Size", 0.7, 1.3, 0.05, key .. kind .. "Scale",
+                function(v) return string.format("%.0f%%  (%.0f px)", v * 100, base * v) end)
+        end
+
+        b:Header(page.title)
+        b:Check("Show " .. page.title .. " Frame" .. (key == "party" and "s" or ""),
+            function() return DB[page.show] end,
+            function(v)
+                DB[page.show] = v
+                if key == "party" then
+                    HideBlizzardPartyFrames()
+                    -- blocked blizz frames cant be un-blocked without a reload
+                    if not v then print("|cff00ff00Itsu:UI|r /reload to get the Blizzard party frames back") end
+                end
+                SetupFrames()
+            end)
+
+        b:Header("Size")
+        Slider("Width", page.minW, page.maxW, 10, key .. "Width", nil, RoundTen)
+        Slider("Health Height", 10, 60, 1, key .. "Health")
+        Slider("Power Height", 5, 35, 1, key .. "Power")
+        if key == "party" then
+            b:Slider("Space Between Frames", 0, 20, 1,
+                function() return DB.partyPadding or 5 end,
+                function(v)
+                    DB.partyPadding = v
+                    RunWhenSafe("partyPos", RepositionPartyFrames)
+                end)
+        end
+
+        AuraSection("Buffs", "Buff", "Debuff")
+        if key == "party" then
+            b:Check("Only my buffs",
+                function() return DB.partyShowOnlyMyBuffs end,
+                function(v)
+                    DB.partyShowOnlyMyBuffs = v
+                    for n = 1, 4 do
+                        SetAuraRowFilter(partyFrames[n] and partyFrames[n].buffRow, v and "HELPFUL|PLAYER" or "HELPFUL")
+                    end
+                end)
+        end
+
+        AuraSection("Debuffs", "Debuff", "Buff")
+        b:Cycle("Show", FILTERS,
+            function() return DB[key .. "DebuffFilter"] end,
+            function(v)
+                DB[key .. "DebuffFilter"] = v
+                for _, f in ipairs(FramesOf(key)) do SetAuraRowFilter(f.debuffRow, v) end
+            end)
+        if page.maxDebuffs then
+            b:Slider("Max Debuffs", 5, 40, 1,
+                function() return DB[page.maxDebuffs] or 40 end,
+                function(v)
+                    DB[page.maxDebuffs] = v
+                    for _, f in ipairs(FramesOf(key)) do SetAuraRowMax(f.debuffRow, v) end
+                end)
+        end
+    end, GROUP)
+end
 
 end)
