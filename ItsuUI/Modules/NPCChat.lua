@@ -887,4 +887,7 @@ ns.RegisterPanel(70, "NPC Chat", function(b)
         function(v) JarsNPCChatDB.titleFontSize = v; ApplyFonts() end)
 end)
 
+-- merchants + trainers, NPCShop.lua
+ns.InitNPCShop()
+
 end)

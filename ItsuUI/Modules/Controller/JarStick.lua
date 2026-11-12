@@ -136,8 +136,9 @@ local MODS = { "", "SHIFT-", "CTRL-", "ALT-", "CTRL-SHIFT-", "ALT-SHIFT-", "ALT-
 local PAD_CVARS = {
     GamePadEmulateShift = "PADLTRIGGER",      -- L2
     GamePadEmulateCtrl = "PADRTRIGGER",       -- R2
-    -- R1 doubles as alt: tap = target friend, hold = party layer on the dpad
-    GamePadEmulateAlt = "PADRSHOULDER",
+    -- R1 used to be alt here, kept breaking. its JarStickR1 in Wheel.lua now
+    -- GamePadEmulateAlt = "PADRSHOULDER",
+    GamePadEmulateAlt = "NONE",
     GamePadEmulateEsc = "NONE",               -- start is bound to TOGGLEGAMEMENU instead, emulation never fired
     GamePadCursorLeftClick = "PADRSHOULDER",  -- R1 left clicks in mouse mode
     GamePadCursorRightClick = "PADLSHOULDER", -- L1 right clicks
@@ -466,11 +467,10 @@ end
 
 -- R1 as alt sometimes stops working while the cvar still reads PADRSHOULDER (Jar, 2026-11-07).
 -- setting it to NONE and back brings it back, so do that when a held button isnt giving its
--- modifier. the triggers get the same check
+-- modifier. the triggers get the same check (R1 isnt emulated anymore, triggers only)
 local EMULATE = {
     GamePadEmulateShift = IsShiftKeyDown,
     GamePadEmulateCtrl = IsControlKeyDown,
-    GamePadEmulateAlt = IsAltKeyDown,
 }
 local rearming = false
 local heldFor = {}
@@ -880,7 +880,7 @@ end
 -- both triggers, or R1, held: dim the icons and show what each button does instead.
 -- select is a plain page now, zoom uses the triggers there so skip the layers
 local function UpdateOverlay()
-    local shift, ctrl, alt = IsShiftKeyDown(), IsControlKeyDown(), IsAltKeyDown()
+    local shift, ctrl, alt = IsShiftKeyDown(), IsControlKeyDown(), ns.r1Layer
     local want = not selectHeld and ((shift and ctrl) and "SPECIAL"
         or (alt and not shift and not ctrl) and "PARTY") or nil
     if want == overlay then return end
@@ -1274,6 +1274,9 @@ ApplyBindings = function()
                 elseif def.panel and SPECIAL_MODS[mod] then
                     -- L2+R2+bumper toggles that sides spare bar grid
                     SetOverrideBindingClick(bindOwner, false, key, "JarStickPanelToggle" .. def.panel, "LeftButton")
+                elseif def.key == "PADRSHOULDER" then
+                    -- tap = target friend, hold = party layer (Wheel.lua)
+                    SetOverrideBindingClick(bindOwner, false, key, "JarStickR1", "LeftButton")
                 elseif def.target then
                     SetOverrideBinding(bindOwner, false, key, def.target)
                 elseif sp and sp.mark then
@@ -1767,6 +1770,7 @@ end)
 -- for Interact.lua and Config.lua
 ns.RunWhenSafe = RunWhenSafe
 ns.ApplyCamera = ApplyCamera
+ns.UpdateOverlay = function() if #buttons > 0 then UpdateOverlay() end end
 ns.ApplyActionCam = ApplyActionCam
 ns.ApplyObjectIcon = ApplyObjectIcon
 ns.ApplyBindings = ApplyBindings

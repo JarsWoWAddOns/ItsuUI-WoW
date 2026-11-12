@@ -200,29 +200,51 @@ local function RingCamera(on)
     SetCapture("ring", on)
 end
 
+-- the list menu in Menus.lua uses the same items
+ns.MenuItems = ITEMS
+ns.OpenMenuItem = OpenItem
+
+-- tap Select = the menu (Menus.lua). holding it still pages the face buttons and zooms,
+-- so a hold that pressed a slot or a trigger doesnt count as a tap. the wheel is retired
+local TAP = 0.35
+
+-- ns.WheelSelect = function(down)
+--     if not wheel then BuildWheel() end
+--     if down and ns.BookShown and ns.BookShown() then return end
+--     if down then
+--         ws.pick, ws.active, ws.used, ws.held, ws.t = nil, false, false, true, 0
+--         driverFrame:SetScript("OnUpdate", WheelUpdate)
+--         SetCapture("wheel", true)
+--         return
+--     end
+--     ws.held = false
+--     driverFrame:SetScript("OnUpdate", nil)
+--     SetCapture("wheel", false)
+--     wheel:Hide()
+--     local it = ws.active and ws.pick and ITEMS[ws.pick]
+--     if it then OpenItem(it) end
+-- end
 ns.WheelSelect = function(down)
-    if not wheel then BuildWheel() end
     -- with the book up, select is just the page you are placing on
     if down and ns.BookShown and ns.BookShown() then return end
     if down then
-        ws.pick, ws.active, ws.used, ws.held, ws.t = nil, false, false, true, 0
-        driverFrame:SetScript("OnUpdate", WheelUpdate)
-        SetCapture("wheel", true)
+        ws.used, ws.held, ws.t = false, true, GetTime()
+        driverFrame:SetScript("OnUpdate", function()
+            if IsShiftKeyDown() or IsControlKeyDown() then ws.used = true end
+        end)
         return
     end
+    if not ws.held then return end
     ws.held = false
     driverFrame:SetScript("OnUpdate", nil)
-    SetCapture("wheel", false)
-    wheel:Hide()
-    local it = ws.active and ws.pick and ITEMS[ws.pick]
-    if it then OpenItem(it) end
+    if not ws.used and GetTime() - ws.t < TAP and ns.ToggleSelMenu then ns.ToggleSelMenu() end
 end
 
--- start backs out of the wheel, a slot press means you are fighting, keep it hidden
+-- start or a slot press while select is down: not a tap
 local function WheelCancel()
     if ws.held then
         ws.active, ws.pick, ws.used = false, nil, true
-        wheel:Hide()
+        if wheel then wheel:Hide() end
     end
 end
 
@@ -601,6 +623,26 @@ local function BuildRingFrame()
     ringFrame:SetScript("OnUpdate", RingUpdate)
 end
 
+-- R1 held: party labels on the dpad only show after a short hold so taps dont flash them.
+-- the bindings swap right away though, secure code has no clock to wait with
+local R1_HOLD = 0.4
+local holdTimer
+
+local function R1Held(on)
+    if holdTimer then holdTimer:Cancel() end
+    holdTimer = nil
+    if on then
+        holdTimer = C_Timer.NewTimer(R1_HOLD, function()
+            holdTimer = nil
+            ns.r1Layer = true
+            if ns.UpdateOverlay then ns.UpdateOverlay() end
+        end)
+    else
+        ns.r1Layer = false
+        if ns.UpdateOverlay then ns.UpdateOverlay() end
+    end
+end
+
 -- secure side ---------------------------------------------------------------------------
 
 local function BuildRing()
@@ -617,6 +659,7 @@ local function BuildRing()
             self:SetBindingClick(true, "PADRSTICK" .. d, "JarStickRingDir", d)
         end
         self:SetAttribute("open", 1)
+        self:SetAttribute("r1used", 1)
     ]])
     ctl:SetAttribute("closering", [[
         self:ClearBindings()
@@ -633,7 +676,8 @@ local function BuildRing()
             self:RunAttribute("closering")
         end
     ]])
-    RegisterStateDriver(ctl, "alt", "[mod:alt] 1; 0")
+    -- RegisterStateDriver(ctl, "alt", "[mod:alt] 1; 0")
+    -- JarStickR1 sets state-alt itself now, see below
 
     -- stick directions target right away, so whoever is lit up is your target.
     -- stick back to center keeps the last pick
@@ -675,6 +719,40 @@ local function BuildRing()
         return false
     ]])
 
+    -- R1 is a plain binding, blizzards alt emulation kept dropping out on it.
+    -- down: dpad targets party 2-5 and L1 opens the ring. up: back to normal,
+    -- and /targetfriend if nothing got used while it was held
+    local party = CreateFrame("Button", "JarStickR1Party", UIParent, "SecureActionButtonTemplate")
+    party:RegisterForClicks("AnyDown")
+    party:SetAttribute("type", "target")
+    party:SetAttribute("useOnKeyDown", true)
+    SecureHandlerWrapScript(party, "OnClick", ctl, [[
+        owner:SetAttribute("r1used", 1)
+        self:SetAttribute("unit", button)
+        return "LeftButton"
+    ]])
+
+    local r1 = CreateFrame("Button", "JarStickR1", UIParent, "SecureActionButtonTemplate")
+    r1:RegisterForClicks("AnyDown", "AnyUp")
+    r1:SetAttribute("type", "macro")
+    r1:SetAttribute("macrotext", "/targetfriend")
+    r1:SetAttribute("useOnKeyDown", false)
+    SecureHandlerWrapScript(r1, "OnClick", ctl, [[
+        if down then
+            owner:SetAttribute("r1used", 0)
+            -- plain keys only, L2/R2 + dpad keep switching bars
+            self:SetBindingClick(true, "PADDUP", "JarStickR1Party", "party1")
+            self:SetBindingClick(true, "PADDRIGHT", "JarStickR1Party", "party2")
+            self:SetBindingClick(true, "PADDLEFT", "JarStickR1Party", "party3")
+            self:SetBindingClick(true, "PADDDOWN", "JarStickR1Party", "party4")
+            owner:SetAttribute("state-alt", 1)
+            return false
+        end
+        self:ClearBindings()
+        owner:SetAttribute("state-alt", 0)
+        if owner:GetAttribute("r1used") == 1 then return false end
+    ]])
+
     -- debug: did the L1 click land, and does the game see R1 as alt
     l1:HookScript("OnClick", function(_, button, down)
         if ns.debug or ns.padWatch then
@@ -687,6 +765,7 @@ local function BuildRing()
         if (ns.debug or ns.padWatch) and (name == "state-alt" or name == "l1" or name == "pick") then
             ns.Log(("ring ctl %s=%s"):format(name, tostring(value)))
         end
+        if name == "state-alt" then R1Held(value == 1) end
         if name ~= "open" then return end
         if ns.debug or ns.padWatch then
             ns.Log(("ring %s  alt=%s  members=%d"):format(value == 1 and "open" or "closed", tostring(IsAltKeyDown()), #Members()))

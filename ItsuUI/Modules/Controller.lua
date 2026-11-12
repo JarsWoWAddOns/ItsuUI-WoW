@@ -206,9 +206,10 @@ ns.RegisterModule("controller", "Controller", function()
 
     ns.RegisterPanel(22.4, "Menus", function(b)
         local db = js.db
-        b:Header("Select wheel  (hold Select)")
-        b:Note("Holding Select pages the face buttons to the bar picked on the Bars page (Action Bar 6 by default). Push the right stick and the menu wheel comes up, let go of Select to open the pick. Start backs out. Press a slot first and it stays hidden for that hold. A window opened from the wheel turns the cursor on, closing it turns it off.")
-        b:Note("Spellbook and Talents on the wheel open Blizzard's own windows. The pad book is L2 + R2 + A (spells) and L2 + R2 + Y (talents). X picks a spell up, then press a face button to put it there. The d-pad switches bars, hold L2 or R2 for slots 5-12, L1 or R1 to drop it into a spare grid. Start cancels. Out of combat only.")
+        b:Header("Select menu  (tap Select)")
+        b:Note("Tap Select for the menu: d-pad picks, X opens, B or another tap closes. Out of combat only. A window opened from it turns the cursor on, closing it turns it off. Holding Select still pages the face buttons to the bar picked on the Bars page (Action Bar 6 by default), and L2 / R2 zoom while it is held.")
+        b:Note("Start opens the game menu: d-pad picks, X selects, B goes back to the game. On the flight map the d-pad hops between flight points, Y switches to an A-Z list, X flies.")
+        b:Note("Spellbook and Talents in the menu open Blizzard's own windows. The pad book is L2 + R2 + A (spells) and L2 + R2 + Y (talents). X picks a spell up, then press a face button to put it there. The d-pad switches bars, hold L2 or R2 for slots 5-12, L1 or R1 to drop it into a spare grid. Start cancels. Out of combat only.")
 
         b:Header("Special layer  (hold L2 + R2)")
         b:Note("Fixed, nothing pages over it: the d-pad toggles a raid marker on your target, A opens the pad spellbook, Y the talents, X unlocks the clusters, B summons a favorite mount or dismounts.")

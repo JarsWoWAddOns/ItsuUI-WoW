@@ -17,7 +17,10 @@ local BOOK_MODS = { "", "SHIFT-", "CTRL-" }
 -- windows that turn the pad into a menu controller. popups and the book only out of combat
 local WATCH = {
     { name = "JarStickBook", nocombat = true, book = true },
-    { name = "JarsNPCChatFrame" }, -- Jars NPC Chat replaces the two below when its loaded
+    -- our own windows get a stand in host, see AttachProbe. pad nav is off for them in combat
+    -- { name = "JarsNPCChatFrame" }, -- Jars NPC Chat replaces the two below when its loaded
+    { name = "JarsNPCChatFrame", nocombat = true, host = true },
+    { name = "JarsNPCShopFrame", nocombat = true, host = true }, -- merchants + trainers
     { name = "GossipFrame" },
     { name = "QuestFrame" },
     { name = "LootFrame" },
@@ -27,6 +30,12 @@ local WATCH = {
     { name = "StaticPopup2", nocombat = true, popup = true },
     { name = "StaticPopup3", nocombat = true, popup = true },
     { name = "StaticPopup4", nocombat = true, popup = true },
+    -- Menus.lua. the game menu's X and B go straight to its secure click proxies, after the
+    -- popups so a logout popup on top still wins
+    { name = "JarStickSelMenu", nocombat = true, host = true },
+    { name = "GameMenuFrame", nocombat = true, host = true, b1 = "JarStickMenuClick", close = "JarStickMenuBack" },
+    { name = "TaxiFrame", nocombat = true, host = true },
+    { name = "FlightMapFrame", nocombat = true, host = true }, -- load on demand, attached once it loads
 }
 
 local function BookShown()
@@ -375,6 +384,20 @@ local function NPCKey(api, key)
     end
 end
 
+-- merchant / trainer list (NPCShop.lua) ---------------------------------------
+-- it keeps its own cursor, we pass keys and draw the highlight. Sell items in its
+-- menu hands the pad to the bags until B
+
+local function Shop()
+    local api = JarsNPCShopAPI
+    if api and api.frame:IsShown() then return api end
+end
+
+local function ShopActive()
+    local api = Shop()
+    if api and not api.BagFocus() then return api end
+end
+
 -- Jars Bags -----------------------------------------------------------------
 -- dpad walks the items by where they sit on screen. X is bound straight to the picked
 -- item button as a right click (use, equip, sell at a vendor) so it stays a real key
@@ -492,7 +515,8 @@ local function BagKey(key)
         local link = bag and C_Container.GetContainerItemLink(bag, slot)
         if link then StaticPopup_Show("JARSTICK_DELETE_ITEM", link, nil, { bag = bag, slot = slot, link = link }) end
     elseif key == "PAD2" then
-        Bags():Hide()
+        -- selling from the shop menu: B goes back to the shop, bags stay open
+        if Shop() then Shop().LeaveBags() else Bags():Hide() end
     end
 end
 
@@ -515,9 +539,15 @@ end
 
 -- popups are not handled here: their buttons can call protected stuff (summon, res,
 -- bonus roll), so the handler binds X/A/B straight to them and the press is a real key event
+local function MenuNav()
+    return ns.MenuNav and ns.MenuNav()
+end
+
 local function UIKey(key)
     if VisiblePopup() then
         return
+    elseif MenuNav() then
+        MenuNav().Key(key)
     elseif BookShown() then
         ns.BookKey(key)
     elseif LootFrame:IsShown() then
@@ -528,6 +558,8 @@ local function UIKey(key)
         QuestKey(key)
     elseif GossipFrame:IsShown() then
         GossipKey(key)
+    elseif ShopActive() then
+        ShopActive().Key(key)
     elseif Bags() then
         BagKey(key)
     elseif MerchantFrame:IsShown() and key == "PAD2" then
@@ -553,6 +585,12 @@ local function LegendEntries()
         if b1 then list[#list + 1] = Entry("PAD3", b1:GetText() or "Accept") end
         if b2 then list[#list + 1] = Entry("PAD1", b2:GetText() or "Decline") end
         list[#list + 1] = Entry("PAD2", "Close")
+        return list
+    elseif MenuNav() then
+        local list = {}
+        for _, e in ipairs(MenuNav().Legend()) do
+            list[#list + 1] = e[1] == "NAV" and NavEntry(e[2]) or Entry(e[1], e[2])
+        end
         return list
     elseif BookShown() then
         return ns.BookLegend()
@@ -589,9 +627,15 @@ local function LegendEntries()
         return { Entry("PAD3", "Select"), Entry("PAD2", "Close"), NavEntry("Quest") }
     elseif GossipFrame:IsShown() then
         return { Entry("PAD3", "Select"), Entry("PAD2", "Close"), NavEntry("Option") }
+    elseif ShopActive() then
+        local list = {}
+        for _, e in ipairs(ShopActive().Legend()) do
+            list[#list + 1] = e[1] == "NAV" and NavEntry(e[2]) or Entry(e[1], e[2])
+        end
+        return list
     elseif Bags() then
         local use = MerchantFrame:IsShown() and "Sell" or "Use / equip"
-        return { Entry("PAD3", use), Entry("PAD4", "Delete"), Entry("PAD2", "Close"), NavEntry("Item") }
+        return { Entry("PAD3", use), Entry("PAD4", "Delete"), Entry("PAD2", Shop() and "Back" or "Close"), NavEntry("Item") }
     elseif MerchantFrame:IsShown() then
         return { Entry("PAD2", "Close"), Glyph("PADRSTICK") .. "+" .. Glyph("PADLSTICK") .. " Mouse to buy" }
     end
@@ -608,8 +652,15 @@ local function UpdateLegend()
     -- npc chat: sit right under its text bubble, otherwise bottom center
     legend:ClearAllPoints()
     local bubble = _G.JarsNPCChatBubble
-    if NPC() and bubble and bubble:IsVisible() and not VisiblePopup() and not BookShown() and not LootFrame:IsShown() then
+    local nav = not VisiblePopup() and MenuNav()
+    if nav and nav.Anchor then
+        legend:SetPoint("TOP", nav.Anchor(), "BOTTOM", 0, -10)
+    elseif nav then
+        legend:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)
+    elseif NPC() and bubble and bubble:IsVisible() and not VisiblePopup() and not BookShown() and not LootFrame:IsShown() then
         legend:SetPoint("TOP", bubble, "BOTTOM", 0, -10)
+    elseif ShopActive() and not VisiblePopup() and not BookShown() and not LootFrame:IsShown() then
+        legend:SetPoint("TOP", ShopActive().frame, "BOTTOM", 0, -10)
     else
         legend:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)
     end
@@ -618,7 +669,9 @@ end
 
 local function RefreshUI()
     local bagActive = false
-    if BookShown() then
+    if MenuNav() and ui:GetAttribute("uiopen") == 1 then
+        Highlight(MenuNav().Current())
+    elseif BookShown() then
         ns.BookRefresh()
     elseif LootFrame:IsShown() then
         LootHighlight()
@@ -628,6 +681,9 @@ local function RefreshUI()
         QuestHighlight()
     elseif GossipFrame:IsShown() then
         GossipHighlight()
+    elseif ShopActive() and ui:GetAttribute("uiopen") == 1 then
+        Highlight(ShopActive().Current())
+        ShopActive().PadTip()
     elseif Bags() and ui:GetAttribute("uiopen") == 1 then
         bagActive = true
         BagHighlight()
@@ -841,7 +897,18 @@ local function AttachProbe(w)
     if target and not probes[w.name] then
         nprobes = nprobes + 1
         local n = nprobes
-        local probe = CreateFrame("Frame", nil, target, "SecureHandlerShowHideTemplate")
+        -- a secure child locks its parent in combat, so our own windows couldnt Hide() anymore
+        -- (npc chat stuck open after a fight). the probe sits on a host that copies the
+        -- window's shown state whenever we're out of combat instead
+        local parent = target
+        if w.host then
+            parent = CreateFrame("Frame", nil, UIParent)
+            parent:SetShown(target:IsShown())
+            local function Sync() parent:SetShown(target:IsShown()) end
+            target:HookScript("OnShow", function() ns.RunWhenSafe("host" .. n, Sync) end)
+            target:HookScript("OnHide", function() ns.RunWhenSafe("host" .. n, Sync) end)
+        end
+        local probe = CreateFrame("Frame", nil, parent, "SecureHandlerShowHideTemplate")
         probe.ignoreInLayout = true -- popups are layout frames, stay out of their math
         probe:SetSize(1, 1)
         probe:SetPoint("TOPLEFT")
@@ -855,6 +922,11 @@ local function AttachProbe(w)
             probe:SetAttribute("b1", b1 and b1:GetName() or "")
             probe:SetAttribute("b2", b2 and b2:GetName() or "")
             probe:SetAttribute("close", target.CloseButton and target.CloseButton:GetName() or "")
+        end
+        if w.b1 then
+            probe:SetAttribute("b1", w.b1)
+            probe:SetAttribute("b2", w.b2 or "")
+            probe:SetAttribute("close", w.close or "")
         end
         -- bump a state attr on the handler, same trigger path the drivers use
         probe:SetAttribute("_onshow", [[
@@ -1113,6 +1185,9 @@ ns.Highlight = function(frame)
     if hl then Highlight(frame) end
 end
 ns.Glyph = Glyph
+ns.AttachLateProbes = function()
+    if ui then AttachLateProbes() end
+end
 ns.RefreshLegend = function()
     if ui then UpdateLegend() end
 end

@@ -22,6 +22,7 @@ Modules\UnitFrames.lua
 Modules\CastBars.lua
 Modules\Bags.lua
 Modules\NPCChat.lua
+Modules\NPCShop.lua
 Modules\ResourceCounter.lua
 Modules\XPBar.lua
 Modules\StanceBar.lua
@@ -31,4 +32,5 @@ Modules\Controller\JarStick.lua
 Modules\Controller\Interact.lua
 Modules\Controller\Book.lua
 Modules\Controller\Wheel.lua
+Modules\Controller\Menus.lua
 Modules\Controller.lua
