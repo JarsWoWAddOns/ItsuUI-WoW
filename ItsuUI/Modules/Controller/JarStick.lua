@@ -245,6 +245,23 @@ end
 -- go to 0 while its on and back to whatever the player had when its off
 local CALM_CVARS = { "CameraKeepCharacterCentered", "CameraReduceUnexpectedMovement" }
 
+-- enemy focus snaps the camera to every soft target too, so only keep it on
+-- while theres a real (hard) enemy target
+local FOCUS_CVAR = "test_cameraTargetFocusEnemyEnable"
+local focusWanted = false
+
+local function UpdateEnemyFocus()
+    if not focusWanted then return end
+    local on = UnitExists("target") and UnitCanAttack("player", "target")
+    local want = on and "1" or "0"
+    if C_CVar.GetCVar(FOCUS_CVAR) ~= want then C_CVar.SetCVar(FOCUS_CVAR, want) end
+end
+
+local focusEvents = CreateFrame("Frame")
+focusEvents:RegisterEvent("PLAYER_TARGET_CHANGED")
+focusEvents:RegisterUnitEvent("UNIT_FACTION", "target")
+focusEvents:SetScript("OnEvent", UpdateEnemyFocus)
+
 local function ApplyActionCam(fromLogin)
     if not ConsoleExec then
         Print("ConsoleExec is gone, set action cam with /console actioncam basic")
@@ -262,7 +279,11 @@ local function ApplyActionCam(fromLogin)
             if cur then C_CVar.SetCVar(cv, "0") end
         end
         ConsoleExec("actioncam " .. (db.actionCamMode or "basic"))
+        -- only gate focus if the preset turned it on
+        focusWanted = C_CVar.GetCVar(FOCUS_CVAR) == "1"
+        UpdateEnemyFocus()
     elseif not fromLogin then
+        focusWanted = false
         ConsoleExec("actioncam off")
         for cv, v in pairs(db.calmCVars or {}) do C_CVar.SetCVar(cv, v) end
         db.calmCVars = nil
